@@ -1,88 +1,124 @@
+# FYP Showcase Portal
+
+Monorepo for the Final Year Project Showcase platform.
+
+This system uses a **type-sharing contract** (via `ts-rs`) to ensure the React frontend and Rust backend stay in sync, maintaining type safety across the entire application boundary.
+
 ---
-include_toc: true
+
+## Architecture & Technical Strategy
+
+The backend employs the **Unified State Pattern** and **Clean Architecture** to maintain strict separation of concerns, ensuring high testability and a hardened security posture.
+
+- **Language & Stack:** **Rust** (Axum + Tokio + Tower).
+- **Core Pattern:** **Unified State** (AppState holds immutable AppConfig and thread-safe Repositories/Storage).
+- **Security:** **Defense-in-Depth** enforced by modular routing (Public, Authenticated, Admin) and a strict `AuthUser` extractor for JWT validation and RBAC.
+- **Observability:** Production-ready tracing layer with **Request Correlation** (unique `x-request-id` header) and **Structured JSON Logging**.
+- **Storage Strategy:** **Hybrid**—MinIO for local development, Supabase Storage (S3 compatible) for production.
+
 ---
 
-# Project Base
-This repo contains initial decent defaults for any new Skynet/Compsoc/Any) project.
+## Directory Structure
 
-## Tools
-### Kanban
-A basic Kanban can be found by going to the ``Projects`` tab.
+We use a specific folder structure to ensure the build pipelines work correctly. Please keep files within their designated directories.
 
-### CI/CD
-A CI/CD runner is provided and can be found in the ``Actions`` tab.  
-This runner is Github actions compatible.
+```text
+fyp-portal/
+├── backend/                # [Source of Truth] Rust API logic and Core Business Layer
+│   ├── src/                # Handlers, models, and repository implementations
+│   ├── Dockerfile          # Multi-stage build for production (no hardcoded APP_ENV)
+│   └── ...
+├── frontend/               # [Consumer] React UI
+│   ├── types/              # [READ-ONLY] Generated TypeScript interfaces (Source: backend/models.rs)
+│   └── ...
+├── db/                     # [Reference] SQL schemas and migrations
+├── .forgejo/               # [CI] Skynet CI/CD workflows (Runs all Unit/Integration tests)
+├── scripts/                # Utility scripts (e.g., Smoke Testing)
+├── docker-compose.yml      # Local development orchestration (MinIO + Postgres)
+└── .devcontainer/          # VS Code environment config
+```
 
-## Components
-Each file has a particular reason for existing, often learnt through (painful) experiences.
+---
 
-Not every file is required (such as ``.mailmap``), but most are *strongly* recommended.
+## Configuration & Secrets
 
-### ``README.md``
-Every project should have a ``README``/``README.txt``/``README.md``.  
-This allows ye to concisely state what the repo is about as well as any quickstart guide.  
-It is often done using Markdown (``.md``) since that allows for structured text and HTML compatability.
+We utilize a **fail-fast** configuration approach in the backend to prevent runtime errors and ensure production security.
 
-If the documentation gets too long it is advised to create a ``doc`` folder as outlined below.
+**1. Backend Secrets (`.env`)**
+The backend requires a `.env` file in the `backend/` directory to connect to the database and retrieve the JWT secret (`SUPABASE_JWT_SECRET`).
 
-### ``LICENSE``
-The included ``LICENSE`` is the MIT one.  
-You can dual (multi) license by including ``LICENSE-MIT`` and ``LICENSE-APACHE`` as what is common in rust projects.
+- **Action:** Ask the team for the current `.env` template.
+- **Warning:** In the production environment (`APP_ENV=production`), missing secrets (e.g., `S3_ACCESS_KEY`) will **panic at startup**.
 
-If a project does not have a license then it is source available, rights reserved.
+**2. Frontend Secrets**
+Public API keys for Supabase (if needed) are stored in `frontend/.env.local`.
 
-### ``.gitignore``
-This controls what git is permitted to commit and control.  
-The file helps ensure that you dont commit code artifacts such as compiled binaries.
+---
 
-It is also a solid defence against committing secrets.
+## Quickstart
 
-### ``.gitattributes``
-The ``.gitattributes`` file preforms two useful roles in this repo:  
+We use a Dev Container to ensure everyone has the same tools (Node, Cargo, Postgres) installed automatically.
 
-1. Ensures a consistent line ending across Windows/Mac/Linux systems.
-   * Line endings is useful in a multi device environment.
-2. Tells git which files to delegate to LFS.
-   * Git is good with text based files.
-   * Git-LFS is an addon which stores the files separately and commits a reference to them.
-   * This helps ensure teh git repo is not bloated by binary (non text) files.
+1. Install Docker Desktop and VS Code.
+2. Install the **"Dev Containers"** extension in VS Code.
+3. Open this folder.
+4. Click **"Reopen in Container"** when prompted.
 
-**Git LFS installer: https://git-lfs.com/**
+---
 
+## Development Workflows
 
-### ``.forgejo/workflows/check_lfs.yaml``
-This is a pipeline config which runs whenever a commit is pushed (``push``), a merge request is updated (``pull_request``) or manually requested (``workflow_dispatch``).
+### 1\. The `ts-rs` Type Contract
 
-Its purpose is to verify that all files which should be in LFS are in LFS.
+The `ts-rs` crate is used to automatically generate TypeScript interface definitions from our core Rust structs in `backend/src/models.rs`.
 
-When more pipelines are added to a repo then it should be integrated into them.
+- **Goal:** Eliminate manual syncing errors. If a field is changed from `String` to `Option<String>` in Rust, the corresponding TypeScript interface is updated automatically.
+- **Source of Truth:** All structs marked with `#[derive(TS)]` in `backend/src/models.rs`.
+- **Destination:** The generated files are placed in the `frontend/types/` directory for the React application to import.
 
-#### Github compatability
-The pipeline is compatible with Github, to do so you need to rename ``.forgejo`` to ``.github``.
+### 2\. Running the Full Stack
 
-### Directories
-#### ``src``
-It is generally recommended that source code for the project goes into this folder.  
-This is an industry psudo-standard.
+To spin up the Backend, local Database (Postgres), and local S3 mirror (MinIO) simultaneously:
 
-#### ``doc``
-In repo documentation should be put in a ``doc``/``docs``/``documentation`` folder.  
-Like ``src`` this is an industry psudo-standard.  
+```bash
+docker compose up
+```
 
-If the documentation is in the ``src`` files this is less important.
+| Component        | Endpoint                           | Purpose                                        |
+| :--------------- | :--------------------------------- | :--------------------------------------------- |
+| **API**          | `http://localhost:3000`            | Rust backend web service.                      |
+| **Swagger Docs** | `http://localhost:3000/swagger-ui` | Auto-generated API contract and documentation. |
+| **Rust Docs**    | `http://localhost:3000/docs`       | HTML documentation for the Rust source code.   |
+| **Local DB**     | `localhost:5432`                   | Vanilla Postgres container for development.    |
 
-### Useful but less important
-#### ``.mailmap``
-Git works based off of email signatures and a single person may have multiple emails associated with git.  
-This file maps multiple emails to a single person, or corrects errros in names.
+**Note on Documentation:**
+The **Swagger UI** generated by Utoipa provides the primary contract reference. The **Rust Docs** (`cargo doc`) provide deep insight into the internal architecture, traits, and handler logic.
 
-Documentation: <https://git-scm.com/docs/gitmailmap>
+### 3\. Frontend Development
 
-#### ``.gitkeep``
-Git tracks files, to it a folder is just a path to a file.  
-Thus if a folder is empty then it is invisible to git.  
-If you wish to commit a folder (as with ``src`` and ``doc`` in this repo) then you need a placeholder file.  
-Once there are other files in the repo then the ``.gitkeep`` can be removed.
+You can run the frontend independently for faster reloading.
 
-## Updating
-If any of the files in this repo are updated down the line, such as ``.gitignore``/``.gitattributes``/``.forgejo/workflows/check_lfs.yaml`` then it is recommended to backport the changes here.
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+### 4\. Syncing Types (The Contract)
+
+If the backend data models (`models.rs`) change, we need to update the frontend types to maintain type safety.
+
+1. Open a terminal in the `backend/` folder.
+2. Run: `cargo test`
+3. This automatically regenerates the files in `frontend/types/`.
+
+**Warning:** The files in `frontend/types/` are generated automatically. **Manual edits will be overwritten and discarded.**
+
+### 5\. Viewing Rust Documentation
+
+To view the internal, deeply commented documentation for the Rust code:
+
+1. Open a terminal in the `backend/` folder.
+2. Run: `cargo doc --open`
+
+This command generates the HTML docs and automatically opens them in your browser. This is essential for understanding the **Repository Abstraction**, **State Management**, and the security reasoning behind the **Auth Extractor**.

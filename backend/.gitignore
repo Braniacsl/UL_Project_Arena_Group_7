@@ -1,0 +1,13 @@
+/target/
+
+/bindings/
+
+*.org
+
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+*.db
+*.sqlite

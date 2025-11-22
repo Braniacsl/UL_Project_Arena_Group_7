@@ -1,0 +1,72 @@
+name: CI/CD for FYP Showcase Platform (Backend)
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'backend/**' # Only run when files in the backend change
+      - '.forgejo/workflows/backend_deploy.yaml'
+  workflow_dispatch:
+
+jobs:
+  test_and_build_backend:
+    name: Test & Build Rust Backend
+    # Run if triggered manually or if 'backend/' files were modified/added
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      contains(toJson(github.event.commits.*.modified), 'backend/') ||
+      contains(toJson(github.event.commits.*.added), 'backend/')
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      # 1. Install Rust Toolchain (Required for your project)
+      - name: Install Rust Toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          profile: minimal
+          override: true
+
+      # 2. Cache Rust Dependencies for speed
+      - name: Cache Cargo Dependencies
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            backend/target
+          # Key based on the lock file to ensure cache invalidates correctly
+          key: ${{ runner.os }}-cargo-${{ hashFiles('backend/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      # 3. Build the backend in release mode (verifies compilation and SQLx)
+      - name: Build Backend (Release)
+        run: cargo build --release --manifest-path backend/Cargo.toml
+
+      # 4. Run Unit and Integration Tests
+      - name: Run All Tests
+        run: cargo test --manifest-path backend/Cargo.toml
+
+      # 5. Build Docker Image (Optional: For pre-deployment verification)
+      - name: Verify Docker Image Build
+        run: docker build -t project-arena-backend -f backend/Dockerfile backend/
+
+  deploy_backend:
+    name: Deploy Backend to Render
+    runs-on: ubuntu-latest
+    needs: test_and_build_backend # Only deploy if tests pass
+    
+    steps:
+      - name: Trigger Render Deployment Hook
+        run: |
+          echo "Triggering Render deployment webhook..."
+          # The webhook URL is stored securely as a repository secret
+          curl -X POST -fail -s ${{ secrets.RENDER_DEPLOY_HOOK }}
+          
+      - name: Success Message
+        run: echo "Successfully triggered Render deployment. Check Render dashboard for status."

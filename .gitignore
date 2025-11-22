@@ -9,6 +9,9 @@ env/
 venv/
 ENV/
 
+.sqlx
+.sqlx/
+
 # Sqlite database files
 *.db
 *.db.*
