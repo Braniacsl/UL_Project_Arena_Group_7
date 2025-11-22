@@ -70,3 +70,11 @@ node_modules/
 
 # python
 __pycache__/
+<<<<<<< HEAD
+=======
+
+/fyp_portal/__pycache__/
+/fyp_portal/users/migrations/
+/fyp_portal/.venv
+.env.django
+>>>>>>> a4a70f0 (Organizing Monorepo)

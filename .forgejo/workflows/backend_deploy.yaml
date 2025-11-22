@@ -5,7 +5,12 @@ on:
     branches:
       - main
     paths:
+<<<<<<< HEAD
       - 'backend/**' # Only run when files in the backend change
+=======
+      - 'backend/**'
+      - 'fyp_portal/**'
+>>>>>>> a4a70f0 (Organizing Monorepo)
       - '.forgejo/workflows/backend_deploy.yaml'
   workflow_dispatch:
 
@@ -48,6 +53,14 @@ jobs:
       - name: Build Backend (Release)
         run: cargo build --release --manifest-path backend/Cargo.toml
 
+      - name: Set Testing Environment Variables
+        run: |
+          echo "APP_ENV=ci" >> $GITHUB_ENV
+          echo "DATABASE_URL=postgres://postgres:password@localhost:5432/fyp" >> $GITHUB_ENV
+          # Note: We assume your Rust code will default S3/MinIO to a testing mode
+          # based on APP_ENV=ci, or you pass MinIO credentials here if necessary.
+          # For simplicity, we are relying on your app's internal test/ci configuration.
+
       # 4. Run Unit and Integration Tests
       - name: Run All Tests
         run: cargo test --manifest-path backend/Cargo.toml
@@ -56,17 +69,24 @@ jobs:
       - name: Verify Docker Image Build
         run: docker build -t project-arena-backend -f backend/Dockerfile backend/
 
-  deploy_backend:
-    name: Deploy Backend to Render
+  deploy_services: # Rename the job to reflect multiple deployments
+    name: Deploy All Services to Render
     runs-on: ubuntu-latest
-    needs: test_and_build_backend # Only deploy if tests pass
+    needs: test_and_build_backend
     
     steps:
-      - name: Trigger Render Deployment Hook
-        run: |
-          echo "Triggering Render deployment webhook..."
-          # The webhook URL is stored securely as a repository secret
-          curl -X POST -fail -s ${{ secrets.RENDER_DEPLOY_HOOK }}
-          
-      - name: Success Message
-        run: echo "Successfully triggered Render deployment. Check Render dashboard for status."
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Log in to Docker Hub
+
+      - name: Build and Push Rust Image
+
+      - name: Trigger RUST Deployment Hook
+        run: curl -X POST -fail -s ${{ secrets.RENDER_DEPLOY_HOOK }}
+
+      - name: Build and Push Django Image
+        run: docker build -f fyp_portal/Dockerfile.django -t ${{ secrets.DOCKER_REPO }}:django ./fyp_portal && docker push ${{ secrets.DOCKER_REPO }}:django
+
+      - name: Trigger DJANGO Deployment Hook
+        run: curl -X POST -fail -s ${{ secrets.RENDER_DJANGO_HOOK }}

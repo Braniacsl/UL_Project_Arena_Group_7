@@ -1,0 +1,31 @@
+FROM python:3.10-slim
+
+ENV PYTHONUNBUFFERD=1
+ENV PYTHONDONTWRITEBYTECODE=1
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y \
+    postgresql-client \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY . .
+
+ENV SECRET_KEY=django-insecure-oc8o1lfee*h!3b(!*3c#hpg72brqy(#i6km=-^d5(=yz=icqxd
+ENV DEBUG=False
+ENV DB_ENGINE=django.db.backends.postgresql
+ENV DB_NAME=fyp_db
+ENV DB_USER=postgres
+ENV DB_PASSWORD=postgres123
+ENV DB_HOST=db
+ENV DB_PORT=5432
+
+
+RUN python manage.py collectstatic --noinput
+
+EXPOSE 8000
+
+CMD ["gunicorn", "fyp_portal.wsgi:application", "--bind", "0.0.0.0:8000"]
