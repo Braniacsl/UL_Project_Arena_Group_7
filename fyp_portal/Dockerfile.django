@@ -1,31 +1,203 @@
-FROM python:3.10-slim
+name: CI/CD for FYP Showcase Platform (Dual Backend)
 
-ENV PYTHONUNBUFFERD=1
-ENV PYTHONDONTWRITEBYTECODE=1
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'backend/**'
+      - 'fyp_portal/**'
+      - '.forgejo/workflows/backend_deploy.yaml'
+  workflow_dispatch:
 
-WORKDIR /app
+jobs:
+  # ============================================================
+  # JOB 1: TEST RUST BACKEND
+  # ============================================================
+  test_rust_backend:
+    name: Test Rust Backend
+    runs-on: ubuntu-latest
+    
+    services:
+      postgres:
+        image: postgres:16-alpine
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        env:
+          POSTGRES_DB: fyp_ci
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: password
 
-RUN apt-get update && apt-get install -y \
-    postgresql-client \
-    && rm -rf /var/lib/apt/lists/*
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+      - name: Install Rust Toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          profile: minimal
+          override: true
+          
+      - name: Cache Cargo Dependencies
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            backend/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('backend/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
 
-COPY . .
+      - name: Set Environment Variables
+        run: |
+          echo "APP_ENV=ci" >> $GITHUB_ENV
+          echo "DATABASE_URL=postgres://postgres:password@localhost:5432/fyp_ci" >> $GITHUB_ENV
+          
+      - name: Install SQLx CLI
+        run: cargo install sqlx-cli --no-default-features --features postgres --locked
+        
+      - name: Run Database Migrations
+        working-directory: backend
+        run: sqlx migrate run --database-url "$DATABASE_URL"
+        env:
+          DATABASE_URL: ${{ env.DATABASE_URL }}
 
-ENV SECRET_KEY=django-insecure-oc8o1lfee*h!3b(!*3c#hpg72brqy(#i6km=-^d5(=yz=icqxd
-ENV DEBUG=False
-ENV DB_ENGINE=django.db.backends.postgresql
-ENV DB_NAME=fyp_db
-ENV DB_USER=postgres
-ENV DB_PASSWORD=postgres123
-ENV DB_HOST=db
-ENV DB_PORT=5432
+      - name: Build Rust Backend
+        working-directory: backend
+        run: cargo build --release
+        
+      - name: Run Rust Tests
+        working-directory: backend
+        run: cargo test
+        env:
+          DATABASE_URL: ${{ env.DATABASE_URL }}
 
+  # ============================================================
+  # JOB 2: BUILD & PUSH RUST DOCKER IMAGE
+  # ============================================================
+  build_and_push_rust:
+    name: Build & Push Rust Image
+    runs-on: ubuntu-latest
+    needs: test_rust_backend
+    
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
 
-RUN python manage.py collectstatic --noinput
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
-EXPOSE 8000
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
 
-CMD ["gunicorn", "fyp_portal.wsgi:application", "--bind", "0.0.0.0:8000"]
+      - name: Build and Push Rust Image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile
+          push: true
+          tags: |
+            ${{ secrets.DOCKER_REPO }}:rust
+            ${{ secrets.DOCKER_REPO }}:rust-${{ github.sha }}
+          cache-from: type=registry,ref=${{ secrets.DOCKER_REPO }}:rust-buildcache
+          cache-to: type=registry,ref=${{ secrets.DOCKER_REPO }}:rust-buildcache,mode=max
+
+      - name: Trigger Render Deployment (Rust)
+        run: |
+          echo "Triggering Rust backend deployment on Render..."
+          response=$(curl -X POST -w "\n%{http_code}" -s "${{ secrets.RENDER_DEPLOY_HOOK }}")
+          http_code=$(echo "$response" | tail -n1)
+          
+          if [ "$http_code" = "200" ] || [ "$http_code" = "201" ]; then
+            echo "Rust deployment triggered successfully (HTTP $http_code)"
+          else
+            echo "Deployment hook returned HTTP $http_code"
+            echo "$response" | head -n -1
+          fi
+
+  # ============================================================
+  # JOB 3: BUILD & PUSH DJANGO DOCKER IMAGE
+  # ============================================================
+  build_and_push_django:
+    name: Build & Push Django Image
+    runs-on: ubuntu-latest
+    # Run in parallel with Rust (no dependency)
+    
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Build and Push Django Image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./fyp_portal
+          file: ./fyp_portal/Dockerfile.django
+          push: true
+          tags: |
+            ${{ secrets.DOCKER_REPO }}:django
+            ${{ secrets.DOCKER_REPO }}:django-${{ github.sha }}
+          cache-from: type=registry,ref=${{ secrets.DOCKER_REPO }}:django-buildcache
+          cache-to: type=registry,ref=${{ secrets.DOCKER_REPO }}:django-buildcache,mode=max
+
+      - name: Trigger Render Deployment (Django)
+        run: |
+          echo "🚀 Triggering Django backend deployment on Render..."
+          response=$(curl -X POST -w "\n%{http_code}" -s "${{ secrets.RENDER_DJANGO_HOOK }}")
+          http_code=$(echo "$response" | tail -n1)
+          
+          if [ "$http_code" = "200" ] || [ "$http_code" = "201" ]; then
+            echo "✅ Django deployment triggered successfully (HTTP $http_code)"
+          else
+            echo "⚠️ Deployment hook returned HTTP $http_code"
+            echo "$response" | head -n -1
+          fi
+
+  # ============================================================
+  # JOB 4: DEPLOYMENT SUMMARY
+  # ============================================================
+  deployment_summary:
+    name: Deployment Summary
+    runs-on: ubuntu-latest
+    needs: [build_and_push_rust, build_and_push_django]
+    if: always()
+    
+    steps:
+      - name: Generate Summary
+        run: |
+          echo "## 🚀 Deployment Status" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Backend | Build | Deploy |" >> $GITHUB_STEP_SUMMARY
+          echo "|---------|-------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| 🦀 Rust | ${{ needs.build_and_push_rust.result }} | Triggered |" >> $GITHUB_STEP_SUMMARY
+          echo "| 🐍 Django | ${{ needs.build_and_push_django.result }} | Triggered |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📦 Docker Images" >> $GITHUB_STEP_SUMMARY
+          echo "- \`${{ secrets.DOCKER_REPO }}:rust\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`${{ secrets.DOCKER_REPO }}:django\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📝 Commit Info" >> $GITHUB_STEP_SUMMARY
+          echo "- **SHA:** \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Branch:** \`${{ github.ref_name }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Author:** @${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "---" >> $GITHUB_STEP_SUMMARY
+          echo "🔗 [View on Docker Hub](https://hub.docker.com/r/${{ secrets.DOCKER_REPO }})" >> $GITHUB_STEP_SUMMARY
