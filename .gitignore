@@ -1,0 +1,69 @@
+# IDE folders
+.idea/
+
+# env files
+.env
+*.env
+*.env.*
+env/
+venv/
+ENV/
+
+# Sqlite database files
+*.db
+*.db.*
+
+# Office Lockfiles
+~$*
+*.tmp
+.~lock.*
+
+# Tmp files
+/**/tmp/
+tmp
+tmp.*
+.temp
+.tmp
+
+# Test files
+test.*
+*.test.*
+test/
+
+# Output of compiling
+out/
+build/
+target/
+dist/
+cmake-build-debug/
+# for QT, both as single directory and as subfolders
+/build-*-*
+/*/build-*-*
+
+# Nix outputs
+result
+/**/result
+
+# Dealing with BlueJ
+*.bluej
+*.out
+*.ctxt
+
+# Dealing with Mac users
+.DS_Store
+
+# Python
+.venv
+
+# Java
+*.class
+*.jar
+.gradle
+**/build/
+!**/src/**/build/
+
+# node.js
+node_modules/
+
+# python
+__pycache__/

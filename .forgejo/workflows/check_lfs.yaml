@@ -1,0 +1,12 @@
+on:
+  - pull_request
+  - push
+  - workflow_dispatch
+
+
+jobs:
+  check_lfs:
+    # nix/docker
+    runs-on: nix
+    steps:
+      - uses: https://github.com/MPLew-is/lfs-check-action@1

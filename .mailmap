@@ -1,0 +1,5 @@
+# Name ye want to display <email ye want to display> <old@email>
+# OR
+# Name ye want to display <email ye want to display> old name <old@email>
+# git shortlog -sne
+Brendan Golden <silver@skynet.ie> silver <silver@skynet.ie>
