@@ -5,23 +5,14 @@ on:
     branches:
       - main
     paths:
-<<<<<<< HEAD
-      - 'backend/**' # Only run when files in the backend change
-=======
       - 'backend/**'
       - 'fyp_portal/**'
->>>>>>> a4a70f0 (Organizing Monorepo)
       - '.forgejo/workflows/backend_deploy.yaml'
   workflow_dispatch:
 
 jobs:
   test_and_build_backend:
     name: Test & Build Rust Backend
-    # Run if triggered manually or if 'backend/' files were modified/added
-    if: |
-      github.event_name == 'workflow_dispatch' ||
-      contains(toJson(github.event.commits.*.modified), 'backend/') ||
-      contains(toJson(github.event.commits.*.added), 'backend/')
     runs-on: ubuntu-latest
     
     steps:
